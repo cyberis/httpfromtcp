@@ -3,14 +3,14 @@ package main
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 )
 
 func main() {
 	file, err := os.Open("messages.txt")
 	if err != nil {
-		fmt.Errorf("Could not open file 'messages.txt': %v", err)
-		os.Exit(1)
+		log.Fatalf("Could not open file 'messages.txt': %v", err)
 	}
 	defer file.Close()
 
@@ -19,11 +19,10 @@ func main() {
 	for {
 		n, err := file.Read(buffer)
 		if err == io.EOF {
-			return
+			break
 		}
 		if err != nil {
-			fmt.Errorf("Unknow read error: %v", err)
-			os.Exit(1)
+			log.Fatalf("Unknow read error: %v", err)
 		}
 		fmt.Printf("read: %s\n", buffer[:n])
 	}
