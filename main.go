@@ -4,18 +4,38 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
+	"net"
 	"strings"
 )
 
 func main() {
-	file, err := os.Open("messages.txt")
-	if err != nil {
-		log.Fatalf("Could not open file 'messages.txt': %v", err)
-	}
 
-	for line := range getLinesChannel(file) {
-		fmt.Printf("read: %s\n", line)
+	l, err := net.Listen("tcp", ":42069")
+	if err != nil {
+		log.Fatalf("Could not start TCP listener: %v", err)
+	}
+	defer l.Close()
+	fmt.Println("Server is listening on port 42069...")
+
+	// Wait for connects and then read from them
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			log.Printf("Could not accept connection: %v", err)
+			continue
+		}
+
+		// Handle the connection in a new goroutine to received write text to stdout
+		go func(c net.Conn) {
+			// Handle the connection here
+			fmt.Println("Client connected!")
+			for line := range getLinesChannel(c) {
+				fmt.Printf("%s", line)
+			}
+			fmt.Println("")
+			c.Close()
+			fmt.Println("Client closed!")
+		}(conn)
 	}
 }
 
