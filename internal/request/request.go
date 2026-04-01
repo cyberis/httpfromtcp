@@ -6,8 +6,17 @@ import (
 	"strings"
 )
 
+// We need to create an enum to track parser state
+type parserState int
+
+const (
+	initialized parserState = iota
+	done
+)
+
 type Request struct {
 	RequestLine RequestLine
+	ParserState parserState
 }
 
 type RequestLine struct {
@@ -18,54 +27,103 @@ type RequestLine struct {
 
 const (
 	CRLF         = "\r\n"
+	bufferSize   = 8
 	validmethods = "GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE|CONNECT"
 )
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	var request Request
+	request := Request{}
+	request.ParserState = initialized
+	buf := make([]byte, bufferSize) // Start with a small buffer to read the request line
+	readToIndex := 0
 
-	requestBuffer, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, err
+	// We need to read until we have a complete request line, which is terminated by CRLF
+	for {
+		if readToIndex >= len(buf) {
+			newBuf := make([]byte, len(buf)*2)
+			copy(newBuf, buf)
+			buf = newBuf
+		}
+		n, err := reader.Read(buf[readToIndex:])
+		if err != nil {
+			if err == io.EOF {
+				return nil, io.ErrUnexpectedEOF // Not enough data to parse the request line
+			}
+			return nil, err
+		}
+		if n == 0 {
+			return nil, io.ErrUnexpectedEOF // No data read, but not EOF
+		}
+		readToIndex += n
+		bytesParsed, err := request.parse(buf[:readToIndex])
+		if err != nil {
+			return nil, err
+		}
+		if bytesParsed > 0 {
+			newBuf := make([]byte, len(buf))
+			copy(newBuf, buf[bytesParsed:readToIndex])
+			buf = newBuf
+			readToIndex -= bytesParsed
+		}
+		if request.ParserState == done {
+			break
+		}
 	}
-	if len(requestBuffer) == 0 {
-		return nil, io.ErrUnexpectedEOF
-	}
-	lines := strings.Split(string(requestBuffer), CRLF)
-	requestLine, err := parseRequestLine(lines[0])
-	if err != nil {
-		return nil, err
-	}
-	request.RequestLine = *requestLine
 
 	return &request, nil
 }
 
-func parseRequestLine(line string) (*RequestLine, error) {
+func parseRequestLine(data string) (*RequestLine, int, error) {
 	var requestLine RequestLine
-	parts := strings.Split(line, " ")
+
+	// Do we have the whole request line? It should include a CRLF at the end, but we can also check for the presence of three parts (method, target, version)
+	if !strings.HasSuffix(data, CRLF) {
+		return nil, 0, nil // Not enough data to parse the request line yet
+	}
+	line := strings.Split(data, CRLF)
+	parts := strings.Split(line[0], " ")
 	if len(parts) != 3 {
-		return nil, io.ErrUnexpectedEOF
+		return nil, 0, io.ErrUnexpectedEOF
 	}
 	// Validate the Method as one of the standard HTTP methods
 	requestLine.Method = parts[0]
 	if !strings.Contains(validmethods, requestLine.Method) {
-		return nil, errors.New("invalid HTTP method")
+		return nil, 0, errors.New("invalid HTTP method")
 	}
 	// Validate the Request Target (basic validation, can be improved)
 	requestLine.RequestTarget = parts[1]
 	if requestLine.RequestTarget == "" {
-		return nil, errors.New("invalid request target")
+		return nil, 0, errors.New("invalid request target")
 	}
 	// Validate the HTTP Version, which currently must be 1.1 only
 	requestLine.HttpVersion = parts[2]
 	if !strings.HasPrefix(requestLine.HttpVersion, "HTTP/") {
-		return nil, errors.New("invalid HTTP version")
+		return nil, 0, errors.New("invalid HTTP version")
 	}
 	requestLine.HttpVersion = strings.TrimPrefix(requestLine.HttpVersion, "HTTP/")
 	if requestLine.HttpVersion != "1.1" {
-		return nil, errors.New("unsupported HTTP version")
+		return nil, 0, errors.New("unsupported HTTP version")
 	}
 
-	return &requestLine, nil
+	return &requestLine, len(line[0]) + len(CRLF), nil
+}
+
+func (r *Request) parse(data []byte) (int, error) {
+	switch r.ParserState {
+	case initialized:
+		requestLine, bytesParsed, err := parseRequestLine(string(data))
+		if err != nil {
+			return 0, err
+		}
+		if requestLine == nil {
+			return 0, nil // Not enough data to parse the request line yet
+		}
+		r.RequestLine = *requestLine
+		r.ParserState = done
+		return bytesParsed, nil
+	case done:
+		return 0, errors.New("request already parsed")
+	default:
+		return 0, errors.New("invalid parser state")
+	}
 }
