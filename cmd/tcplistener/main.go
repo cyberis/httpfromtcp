@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net"
-	"strings"
+
+	"github.com/cyberis/httpfromtcp/internal/request"
 )
 
 func main() {
@@ -29,44 +29,17 @@ func main() {
 		go func(c net.Conn) {
 			// Handle the connection here
 			fmt.Println("Client connected!")
-			for line := range getLinesChannel(c) {
-				fmt.Printf("%s", line)
+			request, err := request.RequestFromReader(c)
+			if err != nil {
+				log.Printf("Could not parse request: %v", err)
+			} else {
+				fmt.Println("Request line:")
+				fmt.Printf("- Method: %s\n", request.RequestLine.Method)
+				fmt.Printf("- Target: %s\n", request.RequestLine.RequestTarget)
+				fmt.Printf("- Version: %s\n", request.RequestLine.HttpVersion)
 			}
-			fmt.Println("")
 			c.Close()
 			fmt.Println("Client closed!")
 		}(conn)
 	}
-}
-
-// Reads the file "messages.txt" in chunks of 8 bytes, handling lines that may be split across reads. It prints each complete line as it is read.
-func getLinesChannel(f io.ReadCloser) <-chan string {
-	lines := make(chan string)
-	go func() {
-		defer close(lines)
-		defer f.Close()
-
-		buffer := make([]byte, 8)
-		var line string
-		for {
-			n, err := f.Read(buffer)
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				log.Printf("Unknown read error: %v", err)
-				return
-			}
-			parts := strings.Split(string(buffer[:n]), "\n")
-			line += parts[0]
-			if len(parts) == 2 {
-				lines <- line
-				line = parts[1]
-			}
-		}
-		if len(line) > 0 {
-			lines <- line
-		}
-	}()
-	return lines
 }
