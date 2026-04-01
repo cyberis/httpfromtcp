@@ -60,9 +60,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			return nil, err
 		}
 		if bytesParsed > 0 {
-			newBuf := make([]byte, len(buf))
-			copy(newBuf, buf[bytesParsed:readToIndex])
-			buf = newBuf
+			copy(buf, buf[bytesParsed:readToIndex])
 			readToIndex -= bytesParsed
 		}
 		if request.ParserState == done {
