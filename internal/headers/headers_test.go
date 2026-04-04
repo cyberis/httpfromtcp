@@ -72,4 +72,14 @@ func TestHeadersParse(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, 0, n)
 	assert.False(t, done)
+
+	// Test: Same header key
+	headers = map[string]string{"cache-control": "no-cache"}
+	data = []byte("Cache-Control: no-store\r\n\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	require.NotNil(t, headers)
+	assert.Equal(t, "no-cache, no-store", headers["cache-control"])
+	assert.Equal(t, 25, n)
+	assert.False(t, done)
 }

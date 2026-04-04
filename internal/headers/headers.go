@@ -47,6 +47,10 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	// We should normalize the header key to be case-insensitive, but we should trim whitespace from the value
 	parts[0] = strings.ToLower(parts[0])
 	parts[1] = strings.TrimSpace(parts[1])
+	// If the header key already exists, we should append the new value to the existing value, separated by a comma and a space, as per RFC 7230 Section 3.2.2
+	if existingValue, exists := h[parts[0]]; exists {
+		parts[1] = existingValue + ", " + parts[1]
+	}
 
 	h[parts[0]] = parts[1]
 
