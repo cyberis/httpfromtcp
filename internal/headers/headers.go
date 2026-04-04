@@ -2,7 +2,9 @@ package headers
 
 import (
 	"errors"
+	"fmt"
 	"strings"
+	"unicode"
 )
 
 type Headers map[string]string
@@ -29,10 +31,21 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	if len(parts) != 2 {
 		return 0, false, errors.New("invalid header line - missing colon")
 	}
+	// Validate the key to ensure leading or trailing whitespace or illegal characters
 	keyLength := len(parts[0])
 	if keyLength != len(strings.TrimSpace(parts[0])) {
 		return 0, false, errors.New("invalid header line - leading or trailing whitespace in header key")
 	}
+	if keyLength == 0 {
+		return 0, false, errors.New("invalid header line - empty header key")
+	}
+	for _, r := range parts[0] {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune("!#$&'*+-.^_`|~", r) {
+			return 0, false, fmt.Errorf("invalid header line - illegal character in header key: %q", r)
+		}
+	}
+	// We should normalize the header key to be case-insensitive, but we should trim whitespace from the value
+	parts[0] = strings.ToLower(parts[0])
 	parts[1] = strings.TrimSpace(parts[1])
 
 	h[parts[0]] = parts[1]
