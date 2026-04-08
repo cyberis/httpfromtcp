@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io"
 	"strings"
+
+	"github.com/cyberis/httpfromtcp/internal/headers"
 )
 
 // We need to create an enum to track parser state
@@ -11,11 +13,13 @@ type parserState int
 
 const (
 	initialized parserState = iota
+	parseHeaders
 	done
 )
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     headers.Headers
 	ParserState parserState
 }
 
@@ -32,8 +36,11 @@ const (
 )
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	request := Request{}
-	request.ParserState = initialized
+	request := Request{
+		ParserState: initialized,
+		Headers:     headers.NewHeaders(),
+	}
+
 	buf := make([]byte, bufferSize) // Start with a small buffer to read the request line
 	readToIndex := 0
 
@@ -107,6 +114,22 @@ func parseRequestLine(data string) (*RequestLine, int, error) {
 }
 
 func (r *Request) parse(data []byte) (int, error) {
+	totalBytesParsed := 0
+	for r.ParserState != done {
+		bytesParsed, err := r.parseSingle(data[totalBytesParsed:])
+		if err != nil {
+			return 0, err
+		}
+		totalBytesParsed += bytesParsed
+		if bytesParsed == 0 {
+			break
+		}
+	}
+	return totalBytesParsed, nil
+
+}
+
+func (r *Request) parseSingle(data []byte) (int, error) {
 	switch r.ParserState {
 	case initialized:
 		requestLine, bytesParsed, err := parseRequestLine(string(data))
@@ -117,11 +140,21 @@ func (r *Request) parse(data []byte) (int, error) {
 			return 0, nil // Not enough data to parse the request line yet
 		}
 		r.RequestLine = *requestLine
-		r.ParserState = done
+		r.ParserState = parseHeaders
+		return bytesParsed, nil
+	case parseHeaders:
+		bytesParsed, headersDone, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+		if headersDone {
+			r.ParserState = done
+		}
 		return bytesParsed, nil
 	case done:
 		return 0, errors.New("request already parsed")
 	default:
 		return 0, errors.New("invalid parser state")
 	}
+
 }
