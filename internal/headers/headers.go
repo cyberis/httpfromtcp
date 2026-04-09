@@ -56,3 +56,8 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 
 	return len(headerLine) + 2, false, nil
 }
+
+func (h Headers) Get(key string) (string, bool) {
+	value, exists := h[strings.ToLower(key)]
+	return value, exists
+}
